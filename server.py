@@ -29,10 +29,10 @@ def preprocess_text(text):
     text = text.lower()
     
     # Tokenisasi
-    tokens = re.findall(r'\b\w+\b', text)
+    tokens = re.findall(r'\b\w+(?:-\w+)?\b', text)
 
     # Stemming (mengubah kata menjadi kata dasar)
-    stemmed_tokens = [stemmer.stem(token) for token in tokens]
+    stemmed_tokens = [stemmer.stem(token) if '-' not in token else token for token in tokens]
 
     return stemmed_tokens
 
