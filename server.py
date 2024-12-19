@@ -5,8 +5,11 @@ from moviepy.editor import VideoFileClip
 from pydub import AudioSegment
 from pydub.effects import low_pass_filter, high_pass_filter
 import speech_recognition as sr
-import yt_dlp  # Gantikan pytube dengan yt-dlp
-import requests  # Untuk link langsung
+import yt_dlp 
+import requests
+import re
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from collections import Counter
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +19,26 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 SUPPORTED_FORMATS = ['mp4', 'avi', 'mkv', 'mov']
 
+# Membuat stemmer
+factory = StemmerFactory()
+stemmer = factory.create_stemmer()
+
+def preprocess_text(text):
+    """Pra-pemrosesan teks: lowercasing, tokenisasi, dan stemming."""
+    # Konversi ke huruf kecil
+    text = text.lower()
+    
+    # Tokenisasi
+    tokens = re.findall(r'\b\w+\b', text)
+
+    # Stemming (mengubah kata menjadi kata dasar)
+    stemmed_tokens = [stemmer.stem(token) for token in tokens]
+
+    return stemmed_tokens
+
+def count_word_frequency(tokens):
+    """Menghitung frekuensi kata dari daftar token."""
+    return Counter(tokens)
 
 def process_video(video_path):
     """ Proses video: ekstrak audio, filter, dan transkripsi. """
@@ -48,8 +71,7 @@ def process_video(video_path):
     except Exception as e:
         raise Exception(f"Proses video gagal: {str(e)}")
 
-
-@app.route('/upload-file', methods=['POST'])
+@app.route('/api/v1/upload-file', methods=['POST'])
 def upload_file():
     try:
         video_file = request.files.get('video')
@@ -66,13 +88,21 @@ def upload_file():
         video_file.save(video_path)
 
         transcription = process_video(video_path)
-        return jsonify({'status': 'success', 'message': 'Video berhasil diproses.', 'transcription': transcription})
+        preprocessed_text = preprocess_text(transcription)
+        word_frequencies = count_word_frequency(preprocessed_text)
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Video berhasil diproses.',
+            'transcription': transcription,
+            'preprocessed_text': preprocessed_text,
+            'word_frequencies': word_frequencies
+        })
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-
-@app.route('/upload-link', methods=['POST'])
+@app.route('/api/v1/upload-link', methods=['POST'])
 def upload_link():
     try:
         video_link = request.json.get('videoLink')
@@ -104,11 +134,19 @@ def upload_link():
                 return jsonify({'status': 'error', 'message': 'Gagal mengunduh video. Periksa link Anda.'}), 400
 
         transcription = process_video(video_path)
-        return jsonify({'status': 'success', 'message': 'Video berhasil diproses.', 'transcription': transcription})
+        preprocessed_text = preprocess_text(transcription)
+        word_frequencies = count_word_frequency(preprocessed_text)
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Video berhasil diproses.',
+            'transcription': transcription,
+            'preprocessed_text': preprocessed_text,
+            'word_frequencies': word_frequencies
+        })
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
