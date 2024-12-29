@@ -5,22 +5,23 @@ import re
 import nltk
 from nltk.tokenize import word_tokenize
 from flask_cors import CORS
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-nltk.download('punkt')
-nltk.download('punkt_tab')
-
+# nltk.download('punkt')
+# nltk.download('punkt_tab')
 
 # Lokasi data NLTK
 nltk.data.path.append('/root/nltk_data')
 
-# API Key dan URL Supabase
-SUPABASE_URL = "https://bbmgbfgcmwippuwnutkk.supabase.co/rest/v1/dataset?select=*"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibWdiZmdjbXdpcHB1d251dGtrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUzMDA3ODYsImV4cCI6MjA1MDg3Njc4Nn0.X0Duw7PxkJyhbyfabvghHHhr4-WaheiRT4dYUE6PKYY"
-
-app = Flask(__name__)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
 # Fungsi untuk mendapatkan dataset dari Supabase
 def fetch_data_from_supabase():
