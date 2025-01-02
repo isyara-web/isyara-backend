@@ -6,6 +6,7 @@ import nltk
 from nltk.tokenize import word_tokenize
 from flask_cors import CORS
 from dotenv import load_dotenv
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 import os
 
 # Load environment variables
@@ -14,14 +15,16 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# nltk.download('punkt')
-# nltk.download('punkt_tab')
-
-# Lokasi data NLTK
+# Pastikan data NLTK tersedia
 nltk.data.path.append('/root/nltk_data')
 
+# Konfigurasi Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
+
+# Inisialisasi stemmer Sastrawi
+factory = StemmerFactory()
+stemmer = factory.create_stemmer()
 
 # Fungsi untuk mendapatkan dataset dari Supabase
 def fetch_data_from_supabase():
@@ -32,39 +35,41 @@ def fetch_data_from_supabase():
     response = requests.get(SUPABASE_URL, headers=headers)
     if response.status_code == 200:
         data = response.json()
-        if all(key in data[0] for key in ['text', 'path_gesture']):
-            return data
-        else:
-            raise ValueError("Dataset missing 'text' or 'path_gesture' columns")
+        return pd.DataFrame(data)
     else:
         raise Exception(f"Error fetching data: {response.status_code}, {response.text}")
 
+# Fungsi normalisasi teks
+def normalize_text(text):
+    text = text.lower()
+    text = re.sub(r"[^a-z\s]", "", text)  # Hapus karakter non-huruf
+    stemmed_text = stemmer.stem(text)  # Stem teks menggunakan Sastrawi
+    return stemmed_text
+
 # Fungsi preprocessing teks
 def preprocess_text(text):
-    text = text.lower()  # Lowercase
-    text = re.sub(r"[^a-z\s]", "", text)  # Hapus angka dan simbol
-    tokens = word_tokenize(text)  # Tokenisasi
+    normalized_text = normalize_text(text)  # Normalisasi teks
+    tokens = word_tokenize(normalized_text)  # Tokenisasi teks
     return tokens
 
-# Translator: Membangun Mapping Huruf ke Path Gesture
+# Translator: Membangun mapping teks ke path gesture
 def build_translator(dataframe):
     translator = {}
     for _, row in dataframe.iterrows():
-        char = row['text'].lower()
-        path = row['path_gesture']
-        translator[char] = path
+        translator[row['text'].lower()] = row['path_gesture']
     return translator
 
-# Translator: Menerjemahkan Teks ke Path Gesture
-def translate_to_sign_language(text, translator):
+# Translator: Menerjemahkan teks ke path gesture
+def translate_to_sign_language(text, translator, debug=False):
     tokens = preprocess_text(text)  # Preprocessing teks input
     result = []
     for token in tokens:
-        for char in token:  # Per karakter
-            if char in translator:
-                result.append(translator[char])  # Tambahkan path gesture
-            else:
-                result.append(f"Character '{char}' not found in translator.")
+        if token in translator:
+            result.append(translator[token])  # Ambil path gesture
+        else:
+            result.append(f"Token '{token}' not found in translator.")
+    if debug:
+        return tokens, result  # Kembalikan tokens dan hasil translasi
     return result
 
 @app.route('/api/v1/text-to-gesture', methods=['POST'])
@@ -76,19 +81,22 @@ def text_to_gesture():
             return jsonify({"error": "No text provided"}), 400
 
         # Ambil data dari Supabase
-        data = fetch_data_from_supabase()
-        df = pd.DataFrame(data)
+        df = fetch_data_from_supabase()
 
-        # Pastikan ada kolom teks untuk mapping
-        if "text" in df.columns and "path_gesture" in df.columns:
-            # Membangun translator
-            translator = build_translator(df)
-
-            # Terjemahkan ke bahasa isyarat
-            sign_language_paths = translate_to_sign_language(input_text, translator)
-            return jsonify({"paths": sign_language_paths}), 200
-        else:
+        # Pastikan dataset memiliki kolom yang diperlukan
+        if "text" not in df.columns or "path_gesture" not in df.columns:
             return jsonify({"error": "Dataset is missing required columns"}), 400
+
+        # Bangun translator dan terjemahkan
+        translator = build_translator(df)
+        tokens, sign_language_paths = translate_to_sign_language(input_text, translator, debug=True)
+
+        # Kembalikan tokens dan hasil translasi
+        return jsonify({
+            "tokens": tokens,
+            "paths": sign_language_paths
+        }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
