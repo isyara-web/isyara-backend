@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import os
 from flask_cors import CORS
 import requests
@@ -147,6 +147,11 @@ def merge_videos(video_paths, output_filename):
     except Exception as e:
         raise Exception(f"Error merging videos: {str(e)}")
 
+@app.route('/uploads/<path:filename>', methods=['GET'])
+def serve_uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+
 @app.route('/api/v1/upload-file', methods=['POST'])
 def upload_file():
     try:
@@ -231,16 +236,17 @@ def text_to_gesture():
         if "text" not in df.columns or "path_gesture" not in df.columns:
             return jsonify({"error": "Dataset is missing required columns"}), 400
 
-        # translator = build_translator(df)
-        # tokens, sign_language_paths = translate_to_sign_language(input_text, translator, debug=True)
-        
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(input_text, translator)
         sign_language_paths = []
 
         for token in tokens:
             if token in translator:
-                sign_language_paths.append(translator[token])
+                path = translator[token]
+                # Jika path lokal, ubah menjadi URL
+                if path.startswith("uploads"):
+                    path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
+                sign_language_paths.append(path)
             else:
                 result = handle_missing_token(token, translator)
                 if isinstance(result, str):  # Error message
@@ -249,7 +255,7 @@ def text_to_gesture():
                     alphabet_video_paths = result
                     output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
                     merged_video_path = merge_videos(alphabet_video_paths, output_filename)
-                    sign_language_paths.append(merged_video_path)
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
         return jsonify({
             "tokens": tokens,
