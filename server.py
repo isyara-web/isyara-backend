@@ -9,7 +9,7 @@ import pandas as pd
 import nltk
 from nltk.tokenize import word_tokenize
 from dotenv import load_dotenv
-from moviepy.editor import VideoFileClip
+from moviepy.editor import concatenate_videoclips, VideoFileClip
 from pydub import AudioSegment
 from pydub.effects import low_pass_filter, high_pass_filter
 import speech_recognition as sr
@@ -92,9 +92,8 @@ def normalize_text(text):
 
 def preprocess_text_for_gesture(text, translator):
     normalized_text = normalize_text(text)
-    tokens = word_tokenize(normalized_text)  # Tokenisasi awal
-    return tokens  # Kembalikan token
-
+    tokens = word_tokenize(normalized_text)
+    return tokens
 
 def build_translator(dataframe):
     translator = {}
@@ -106,20 +105,17 @@ def translate_to_sign_language(text, translator, debug=False):
     tokens = preprocess_text_for_gesture(text, translator)
     result = []
 
-    # Sliding window untuk memeriksa frasa
     i = 0
     while i < len(tokens):
         matched = False
-        # Cek dari frasa terpanjang (gabungan token)
         for j in range(len(tokens), i, -1):
-            phrase = " ".join(tokens[i:j])  # Gabungkan token menjadi frasa
+            phrase = " ".join(tokens[i:j]) 
             if phrase in translator:
-                result.append(translator[phrase])  # Tambahkan path jika cocok
-                i = j  # Lanjutkan setelah frasa yang cocok
+                result.append(translator[phrase])  
+                i = j 
                 matched = True
                 break
         
-        # Jika tidak ada frasa panjang yang cocok, lanjutkan dengan token individu
         if not matched:
             token = tokens[i]
             if token in translator:
@@ -140,6 +136,16 @@ def handle_missing_token(token, translator):
         else:
             return f"Token '{token}' not found in translator."
     return paths
+
+def merge_videos(video_paths, output_filename):
+    try:
+        clips = [VideoFileClip(path) for path in video_paths]
+        final_clip = concatenate_videoclips(clips)
+        final_clip.write_videofile(output_filename, codec='libx264', audio_codec='aac')
+        final_clip.close()
+        return output_filename
+    except Exception as e:
+        raise Exception(f"Error merging videos: {str(e)}")
 
 @app.route('/api/v1/upload-file', methods=['POST'])
 def upload_file():
@@ -240,7 +246,10 @@ def text_to_gesture():
                 if isinstance(result, str):  # Error message
                     sign_language_paths.append(result)
                 else:  # List of paths for individual letters
-                    sign_language_paths.extend(result)
+                    alphabet_video_paths = result
+                    output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+                    merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                    sign_language_paths.append(merged_video_path)
 
         return jsonify({
             "tokens": tokens,
