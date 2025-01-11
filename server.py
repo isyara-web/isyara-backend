@@ -132,6 +132,15 @@ def translate_to_sign_language(text, translator, debug=False):
         return tokens, result
     return result
 
+def handle_missing_token(token, translator):
+    paths = []
+    for char in token:
+        if char in translator:
+            paths.append(translator[char])
+        else:
+            return f"Token '{token}' not found in translator."
+    return paths
+
 @app.route('/api/v1/upload-file', methods=['POST'])
 def upload_file():
     try:
@@ -216,8 +225,22 @@ def text_to_gesture():
         if "text" not in df.columns or "path_gesture" not in df.columns:
             return jsonify({"error": "Dataset is missing required columns"}), 400
 
+        # translator = build_translator(df)
+        # tokens, sign_language_paths = translate_to_sign_language(input_text, translator, debug=True)
+        
         translator = build_translator(df)
-        tokens, sign_language_paths = translate_to_sign_language(input_text, translator, debug=True)
+        tokens = preprocess_text_for_gesture(input_text, translator)
+        sign_language_paths = []
+
+        for token in tokens:
+            if token in translator:
+                sign_language_paths.append(translator[token])
+            else:
+                result = handle_missing_token(token, translator)
+                if isinstance(result, str):  # Error message
+                    sign_language_paths.append(result)
+                else:  # List of paths for individual letters
+                    sign_language_paths.extend(result)
 
         return jsonify({
             "tokens": tokens,
