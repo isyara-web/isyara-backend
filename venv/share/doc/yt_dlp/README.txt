@@ -665,8 +665,7 @@ Filesystem Options:
     --no-restrict-filenames         Allow Unicode characters, "&" and spaces in
                                     filenames (default)
     --windows-filenames             Force filenames to be Windows-compatible
-    --no-windows-filenames          Make filenames Windows-compatible only if
-                                    using Windows (default)
+    --no-windows-filenames          Sanitize filenames only minimally
     --trim-filenames LENGTH         Limit the filename length (excluding
                                     extension) to the specified number of
                                     characters
@@ -2146,10 +2145,10 @@ youtube
 -   player_client: Clients to extract video data from. The main clients
     are web, ios and android, with variants _music and _creator (e.g.
     ios_creator); and mweb, android_vr, web_safari, web_embedded, tv and
-    tv_embedded with no variants. By default, ios,mweb is used, or
-    web_creator,mweb is used when authenticating with cookies. The
-    _music variants are added for music.youtube.com URLs. Some clients,
-    such as web and android, require a po_token for their formats to be
+    tv_embedded with no variants. By default, ios,tv is used, or
+    web_creator,tv is used when authenticating with cookies. The _music
+    variants are added for music.youtube.com URLs. Some clients, such as
+    web and android, require a po_token for their formats to be
     downloadable. Some clients, such as the _creator variants, will only
     work with authentication. Not all clients support authentication via
     cookies. You can use all to use all the clients, and default for the
@@ -2175,7 +2174,8 @@ youtube
 -   formats: Change the types of formats to return. dashy (convert HTTP
     to DASH), duplicate (identical content but different URLs or
     protocol; includes dashy), incomplete (cannot be downloaded
-    completely - live dash and post-live m3u8)
+    completely - live dash and post-live m3u8), missing_pot (include
+    formats that require a PO Token but are missing one)
 -   innertube_host: Innertube API host to use for all API requests; e.g.
     studio.youtube.com, youtubei.googleapis.com. Note that cookies
     exported from one subdomain will not work on others

@@ -114,7 +114,7 @@ complete --command yt-dlp --long-option autonumber-start
 complete --command yt-dlp --long-option restrict-filenames --description 'Restrict filenames to only ASCII characters, and avoid "&" and spaces in filenames'
 complete --command yt-dlp --long-option no-restrict-filenames --description 'Allow Unicode characters, "&" and spaces in filenames (default)'
 complete --command yt-dlp --long-option windows-filenames --description 'Force filenames to be Windows-compatible'
-complete --command yt-dlp --long-option no-windows-filenames --description 'Make filenames Windows-compatible only if using Windows (default)'
+complete --command yt-dlp --long-option no-windows-filenames --description 'Sanitize filenames only minimally'
 complete --command yt-dlp --long-option trim-filenames --description 'Limit the filename length (excluding extension) to the specified number of characters'
 complete --command yt-dlp --long-option no-overwrites --short-option w --description 'Do not overwrite any files'
 complete --command yt-dlp --long-option force-overwrites --description 'Overwrite all video and metadata files. This option includes --no-continue'
