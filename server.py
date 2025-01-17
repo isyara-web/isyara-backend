@@ -167,15 +167,37 @@ def upload_file():
         video_file.save(video_path)
 
         transcription = process_video(video_path)
-        preprocessed_text = preprocess_text(transcription)
-        word_frequencies = count_word_frequency(preprocessed_text)
+
+        # Proses gesture bahasa isyarat
+        df = fetch_data_from_supabase()
+        if "text" not in df.columns or "path_gesture" not in df.columns:
+            return jsonify({"error": "Dataset is missing required columns"}), 400
+
+        translator = build_translator(df)
+        tokens = preprocess_text_for_gesture(transcription, translator)
+        sign_language_paths = []
+
+        for token in tokens:
+            if token in translator:
+                path = translator[token]
+                if path.startswith("uploads"):
+                    path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
+                sign_language_paths.append(path)
+            else:
+                result = handle_missing_token(token, translator)
+                if isinstance(result, str):
+                    sign_language_paths.append(result)
+                else:
+                    alphabet_video_paths = result
+                    output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+                    merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
         return jsonify({
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'preprocessed_text': preprocessed_text,
-            'word_frequencies': word_frequencies
+            'gesture_paths': sign_language_paths
         })
 
     except Exception as e:
