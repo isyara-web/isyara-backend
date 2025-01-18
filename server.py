@@ -164,9 +164,13 @@ def upload_file():
             return jsonify({'status': 'error', 'message': 'Format file tidak didukung.'}), 400
 
         video_path = os.path.join(UPLOAD_FOLDER, video_file.filename)
-        video_file.save(video_path)
 
-        transcription = process_video(video_path)
+        # Jika file video sudah ada, lewati proses unggah ulang
+        if os.path.exists(video_path):
+            transcription = process_video(video_path)
+        else:
+            video_file.save(video_path)
+            transcription = process_video(video_path)
 
         # Proses gesture bahasa isyarat
         df = fetch_data_from_supabase()
@@ -175,29 +179,39 @@ def upload_file():
 
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(transcription, translator)
-        sign_language_paths = []
+        gesture_paths = []  # Berisi pasangan {text, path}
 
         for token in tokens:
             if token in translator:
                 path = translator[token]
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
-                sign_language_paths.append(path)
+                gesture_paths.append({"text": token, "path": path})
             else:
-                result = handle_missing_token(token, translator)
-                if isinstance(result, str):
-                    sign_language_paths.append(result)
+                # Periksa apakah file video gesture untuk token sudah ada
+                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+                if os.path.exists(output_filename):
+                    gesture_paths.append({
+                        "text": token,
+                        "path": f"http://localhost:5000/uploads/{os.path.basename(output_filename)}"
+                    })
                 else:
-                    alphabet_video_paths = result
-                    output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-                    merged_video_path = merge_videos(alphabet_video_paths, output_filename)
-                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
+                    result = handle_missing_token(token, translator)
+                    if isinstance(result, str):
+                        gesture_paths.append({"text": token, "path": result})
+                    else:
+                        alphabet_video_paths = result
+                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                        gesture_paths.append({
+                            "text": token,
+                            "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
+                        })
 
         return jsonify({
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'gesture_paths': sign_language_paths
+            'gesture_paths': gesture_paths
         })
 
     except Exception as e:
