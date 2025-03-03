@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
+from sklearn.metrics import confusion_matrix
 import os
 from flask_cors import CORS
 import requests
@@ -146,11 +147,37 @@ def merge_videos(video_paths, output_filename):
         return output_filename
     except Exception as e:
         raise Exception(f"Error merging videos: {str(e)}")
+    
+def calculate_accuracy(expected, predicted):
+    correct = sum(1 for e, p in zip(expected, predicted) if e == p)
+    return correct / len(expected) if expected else 0
+
+def generate_confusion_matrix(true_labels, predicted_labels, labels):
+    return confusion_matrix(true_labels, predicted_labels, labels=labels).tolist()
+
+def evaluate_translation(original_text, translated_gestures, translator):
+    tokens = preprocess_text(original_text)
+    expected_gestures = []
+    
+    for token in tokens:
+        if token in translator:
+            expected_gestures.append(translator[token])
+        else:
+            local_path = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+            if os.path.exists(local_path):
+                expected_gestures.append(f"http://localhost:5000/uploads/{os.path.basename(local_path)}")
+            else:
+                expected_gestures.append("Unknown")
+    
+    accuracy = calculate_accuracy(expected_gestures, translated_gestures)
+    unique_labels = list(set(expected_gestures + translated_gestures))
+    cm = generate_confusion_matrix(expected_gestures, translated_gestures, labels=unique_labels)
+    
+    return accuracy, cm, unique_labels
 
 @app.route('/uploads/<path:filename>', methods=['GET'])
 def serve_uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
-
 
 @app.route('/api/v1/upload-file', methods=['POST'])
 def upload_file():
@@ -224,37 +251,77 @@ def upload_link():
         if not video_link:
             return jsonify({'status': 'error', 'message': 'Harap masukkan link video.'}), 400
 
-        video_path = os.path.join(UPLOAD_FOLDER, 'downloaded_video.mp4')
-        if 'youtube.com' in video_link or 'youtu.be' in video_link:
-            ydl_opts = {
-                'format': 'best',
-                'outtmpl': video_path,
-                'quiet': True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_link])
-        else:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-            }
-            response = requests.get(video_link, headers=headers, stream=True)
-            if response.status_code == 200:
-                with open(video_path, 'wb') as video_file:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        video_file.write(chunk)
-            else:
-                return jsonify({'status': 'error', 'message': 'Gagal mengunduh video. Periksa link Anda.'}), 400
+        # Generate a unique filename based on the video link
+        video_filename = re.sub(r'\W+', '_', video_link) + '.mp4'
+        video_path = os.path.join(UPLOAD_FOLDER, video_filename)
 
-        transcription = process_video(video_path)
-        preprocessed_text = preprocess_text(transcription)
-        word_frequencies = count_word_frequency(preprocessed_text)
+        # Jika file video sudah ada, lewati proses unduhan
+        if os.path.exists(video_path):
+            transcription = process_video(video_path)
+        else:
+            if 'youtube.com' in video_link or 'youtu.be' in video_link:
+                ydl_opts = {
+                    'format': 'best',
+                    'outtmpl': video_path,
+                    'quiet': True,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([video_link])
+            else:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+                }
+                response = requests.get(video_link, headers=headers, stream=True)
+                if response.status_code == 200:
+                    with open(video_path, 'wb') as video_file:
+                        for chunk in response.iter_content(chunk_size=1024):
+                            video_file.write(chunk)
+                else:
+                    return jsonify({'status': 'error', 'message': 'Gagal mengunduh video. Periksa link Anda.'}), 400
+
+            transcription = process_video(video_path)
+
+        # Proses gesture bahasa isyarat
+        df = fetch_data_from_supabase()
+        if "text" not in df.columns or "path_gesture" not in df.columns:
+            return jsonify({"error": "Dataset is missing required columns"}), 400
+
+        translator = build_translator(df)
+        tokens = preprocess_text_for_gesture(transcription, translator)
+        gesture_paths = []
+
+        for token in tokens:
+            if token in translator:
+                path = translator[token]
+                if path.startswith("uploads"):
+                    path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
+
+                gesture_paths.append({"text": token, "path": path})
+            else:
+                # Periksa apakah file video gesture untuk token sudah ada
+                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+                if os.path.exists(output_filename):
+                    gesture_paths.append({
+                        "text": token,
+                        "path": f"http://localhost:5000/uploads/{os.path.basename(output_filename)}"
+                    })
+                else:
+                    result = handle_missing_token(token, translator)
+                    if isinstance(result, str):
+                        gesture_paths.append({"text": token, "path": result})
+                    else:
+                        alphabet_video_paths = result
+                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                        gesture_paths.append({
+                            "text": token,
+                            "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
+                        })
 
         return jsonify({
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'preprocessed_text': preprocessed_text,
-            'word_frequencies': word_frequencies
+            'gesture_paths': gesture_paths
         })
 
     except Exception as e:
@@ -293,9 +360,14 @@ def text_to_gesture():
                     merged_video_path = merge_videos(alphabet_video_paths, output_filename)
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
+        accuracy, cm, labels = evaluate_translation(input_text, sign_language_paths, translator)
+                
         return jsonify({
             "tokens": tokens,
-            "paths": sign_language_paths
+            "paths": sign_language_paths,
+            "accuracy": accuracy,
+            "confusion_matrix": cm,
+            "labels": labels
         }), 200
 
     except Exception as e:
