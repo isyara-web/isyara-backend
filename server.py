@@ -351,14 +351,17 @@ def text_to_gesture():
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
                 sign_language_paths.append(path)
             else:
-                result = handle_missing_token(token, translator)
-                if isinstance(result, str):  # Error message
-                    sign_language_paths.append(result)
-                else:  # List of paths for individual letters
-                    alphabet_video_paths = result
-                    output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-                    merged_video_path = merge_videos(alphabet_video_paths, output_filename)
-                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
+                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+                if os.path.exists(output_filename):
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
+                else:
+                    result = handle_missing_token(token, translator)
+                    if isinstance(result, str):  # Error message
+                        sign_language_paths.append(result)
+                    else:  # List of paths for individual letters
+                        alphabet_video_paths = result
+                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                        sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
         accuracy, cm, labels = evaluate_translation(input_text, sign_language_paths, translator)
                 
