@@ -15,6 +15,8 @@ from pydub import AudioSegment
 from pydub.effects import low_pass_filter, high_pass_filter
 import speech_recognition as sr
 import yt_dlp
+import torch
+from sentence_transformers import SentenceTransformer, util
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +39,8 @@ stemmer = factory.create_stemmer()
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
+
+model = SentenceTransformer('distiluse-base-multilingual-cased-v1')
 
 def preprocess_text(text):
     text = text.lower()
@@ -174,6 +178,38 @@ def evaluate_translation(original_text, translated_gestures, translator):
     cm = generate_confusion_matrix(expected_gestures, translated_gestures, labels=unique_labels)
     
     return accuracy, cm, unique_labels
+
+def compute_nlp_accuracy_transformers(original_text, translated_gestures):
+    original_embedding = model.encode(original_text, convert_to_tensor=True)
+    gesture_text = " ".join(translated_gestures)
+    gesture_embedding = model.encode(gesture_text, convert_to_tensor=True)
+
+    similarity_score = util.pytorch_cos_sim(original_embedding, gesture_embedding).item()
+    accuracy_percentage = round(similarity_score * 100, 2)
+    return accuracy_percentage
+
+def generate_confusion_matrix_transformers(true_labels, predicted_labels):
+    unique_labels = list(set(true_labels + predicted_labels))
+    return confusion_matrix(true_labels, predicted_labels, labels=unique_labels).tolist(), unique_labels
+
+def evaluate_translation_transformers(original_text, translated_gestures, translator):
+    tokens = preprocess_text(original_text)
+    expected_gestures = []
+
+    for token in tokens:
+        if token in translator:
+            expected_gestures.append(translator[token])
+        else:
+            local_path = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
+            if os.path.exists(local_path):
+                expected_gestures.append(f"http://localhost:5000/uploads/{os.path.basename(local_path)}")
+            else:
+                expected_gestures.append("Unknown")
+
+    nlp_accuracy = compute_nlp_accuracy_transformers(original_text, translated_gestures)
+    cm_transformers, labels = generate_confusion_matrix_transformers(expected_gestures, translated_gestures)
+    
+    return nlp_accuracy, cm_transformers, labels
 
 @app.route('/uploads/<path:filename>', methods=['GET'])
 def serve_uploaded_file(filename):
@@ -364,12 +400,16 @@ def text_to_gesture():
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
         accuracy, cm, labels = evaluate_translation(input_text, sign_language_paths, translator)
+        # transformers
+        accuracy_percentage, cm_transformers, labels = evaluate_translation_transformers(input_text, sign_language_paths, translator)
                 
         return jsonify({
             "tokens": tokens,
-            "paths": sign_language_paths,
+            "paths": sign_language_paths, 
             "accuracy": accuracy,
+            "accuracy with transformers": f"{accuracy_percentage}%",
             "confusion_matrix": cm,
+            "confusion_matrix with transformers": cm_transformers,
             "labels": labels
         }), 200
 
