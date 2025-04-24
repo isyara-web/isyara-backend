@@ -17,7 +17,7 @@ import speech_recognition as sr
 import yt_dlp
 import torch
 from sentence_transformers import SentenceTransformer, util
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 # Load environment variables
 load_dotenv()
 
@@ -270,11 +270,38 @@ def upload_file():
                             "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
                         })
 
+        # Label benar (ground truth): semua token dari hasil transkripsi
+        y_true = [1 if token in translator else 0 for token in tokens]
+
+        # Prediksi sistem: 1 jika sistem berhasil menemukan atau membuat gesture path, 0 jika tidak
+        y_pred = []
+        for g in gesture_paths:
+            path = g['path']
+            if "Token" in path or "not found" in path:
+                y_pred.append(0)
+            else:
+                y_pred.append(1)
+
+        # Hitung metrik evaluasi
+        accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
+        precision = round(precision_score(y_true, y_pred, zero_division=0) * 100, 2)
+        recall = round(recall_score(y_true, y_pred, zero_division=0) * 100, 2)
+        f1 = round(f1_score(y_true, y_pred, zero_division=0) * 100, 2)
+        cm = confusion_matrix(y_true, y_pred).tolist()
+        
         return jsonify({
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'gesture_paths': gesture_paths
+            'gesture_paths': gesture_paths,
+            'evaluation': {
+                'accuracy': f"{accuracy}%",
+                'precision': f"{precision}%",
+                'recall': f"{recall}%",
+                'f1_score': f"{f1}%",
+                'confusion_matrix': cm
+            }
+
         })
 
     except Exception as e:
