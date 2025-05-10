@@ -48,9 +48,6 @@ def preprocess_text(text):
     stemmed_tokens = [stemmer.stem(token) if '-' not in token else token for token in tokens]
     return stemmed_tokens
 
-def count_word_frequency(tokens):
-    return Counter(tokens)
-
 def process_video(video_path):
     audio_path = os.path.splitext(video_path)[0] + '.wav'
     filtered_audio_path = os.path.splitext(video_path)[0] + '_filtered.wav'
@@ -78,13 +75,15 @@ def process_video(video_path):
         raise Exception(f"Proses video gagal: {str(e)}")
 
 def fetch_data_from_supabase():
+    url = f"{SUPABASE_URL}/dataset?select=*,synonym(*)"
     headers = {
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
     }
-    response = requests.get(SUPABASE_URL, headers=headers)
+    response = requests.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
+        print("DEBUG synonym response:", data)
         return pd.DataFrame(data)
     else:
         raise Exception(f"Error fetching data: {response.status_code}, {response.text}")
@@ -407,9 +406,28 @@ def text_to_gesture():
         sign_language_paths = []
 
         for token in tokens:
+            path = None
+
+            # Langsung ada di translator (text)
             if token in translator:
                 path = translator[token]
-                # Jika path lokal, ubah menjadi URL
+            else:
+                # Cek apakah token adalah synonym
+                matched_row = None
+                for _, row in df.iterrows():
+                    synonyms = row.get('synonym', [])
+                    for synonym_entry in synonyms:
+                        if synonym_entry.get("synonym", "").lower() == token:
+                            filtered = df[df['id'] == synonym_entry['id_dataset']]
+                            if not filtered.empty:
+                                matched_row = filtered.iloc[0]
+                                path = matched_row['path_gesture']
+                                break
+                    if path:
+                        break
+
+            if path:
+                # Ubah ke URL jika path lokal
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
                 sign_language_paths.append(path)
@@ -421,23 +439,13 @@ def text_to_gesture():
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
                         sign_language_paths.append(result)
-                    else:  # List of paths for individual letters
-                        alphabet_video_paths = result
-                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
+                    else:
+                        merged_video_path = merge_videos(result, output_filename)
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
-        accuracy, cm, labels = evaluate_translation(input_text, sign_language_paths, translator)
-        # transformers
-        accuracy_percentage, cm_transformers, labels = evaluate_translation_transformers(input_text, sign_language_paths, translator)
-                
         return jsonify({
             "tokens": tokens,
             "paths": sign_language_paths, 
-            "accuracy": accuracy,
-            "accuracy with transformers": f"{accuracy_percentage}%",
-            "confusion_matrix": cm,
-            "confusion_matrix with transformers": cm_transformers,
-            "labels": labels
         }), 200
 
     except Exception as e:
