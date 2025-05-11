@@ -150,65 +150,6 @@ def merge_videos(video_paths, output_filename):
         return output_filename
     except Exception as e:
         raise Exception(f"Error merging videos: {str(e)}")
-    
-def calculate_accuracy(expected, predicted):
-    correct = sum(1 for e, p in zip(expected, predicted) if e == p)
-    return correct / len(expected) if expected else 0
-
-def generate_confusion_matrix(true_labels, predicted_labels, labels):
-    return confusion_matrix(true_labels, predicted_labels, labels=labels).tolist()
-
-def evaluate_translation(original_text, translated_gestures, translator):
-    tokens = preprocess_text(original_text)
-    expected_gestures = []
-    
-    for token in tokens:
-        if token in translator:
-            expected_gestures.append(translator[token])
-        else:
-            local_path = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-            if os.path.exists(local_path):
-                expected_gestures.append(f"http://localhost:5000/uploads/{os.path.basename(local_path)}")
-            else:
-                expected_gestures.append("Unknown")
-    
-    accuracy = calculate_accuracy(expected_gestures, translated_gestures)
-    unique_labels = list(set(expected_gestures + translated_gestures))
-    cm = generate_confusion_matrix(expected_gestures, translated_gestures, labels=unique_labels)
-    
-    return accuracy, cm, unique_labels
-
-def compute_nlp_accuracy_transformers(original_text, translated_gestures):
-    original_embedding = model.encode(original_text, convert_to_tensor=True)
-    gesture_text = " ".join(translated_gestures)
-    gesture_embedding = model.encode(gesture_text, convert_to_tensor=True)
-
-    similarity_score = util.pytorch_cos_sim(original_embedding, gesture_embedding).item()
-    accuracy_percentage = round(similarity_score * 100, 2)
-    return accuracy_percentage
-
-def generate_confusion_matrix_transformers(true_labels, predicted_labels):
-    unique_labels = list(set(true_labels + predicted_labels))
-    return confusion_matrix(true_labels, predicted_labels, labels=unique_labels).tolist(), unique_labels
-
-def evaluate_translation_transformers(original_text, translated_gestures, translator):
-    tokens = preprocess_text(original_text)
-    expected_gestures = []
-
-    for token in tokens:
-        if token in translator:
-            expected_gestures.append(translator[token])
-        else:
-            local_path = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-            if os.path.exists(local_path):
-                expected_gestures.append(f"http://localhost:5000/uploads/{os.path.basename(local_path)}")
-            else:
-                expected_gestures.append("Unknown")
-
-    nlp_accuracy = compute_nlp_accuracy_transformers(original_text, translated_gestures)
-    cm_transformers, labels = generate_confusion_matrix_transformers(expected_gestures, translated_gestures)
-    
-    return nlp_accuracy, cm_transformers, labels
 
 @app.route('/uploads/<path:filename>', methods=['GET'])
 def serve_uploaded_file(filename):
@@ -241,42 +182,51 @@ def upload_file():
 
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(transcription, translator)
-        gesture_paths = []  # Berisi pasangan {text, path}
+        sign_language_paths = []
 
         for token in tokens:
+            path = None
+            
             if token in translator:
                 path = translator[token]
+            else :
+                # Cek apakah token adalah synonym
+                matched_row = None
+                for _, row in df.iterrows():
+                    synonym = row.get('synonym',[])
+                    for synonym_entry in synonym:
+                        if synonym_entry.get("synonym","").lower() == token:
+                            filtered = df[df['id'] == synonym_entry['id_dataset']]
+                            if not filtered.empty:
+                                matched_row = filtered.iloc[0]
+                                path = matched_row['path_gesture']
+                                break
+                    if path:
+                        break
+            
+            if path:
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
-                gesture_paths.append({"text": token, "path": path})
+                sign_language_paths.append(path)
             else:
-                # Periksa apakah file video gesture untuk token sudah ada
                 output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
                 if os.path.exists(output_filename):
-                    gesture_paths.append({
-                        "text": token,
-                        "path": f"http://localhost:5000/uploads/{os.path.basename(output_filename)}"
-                    })
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
                 else:
                     result = handle_missing_token(token, translator)
-                    if isinstance(result, str):
-                        gesture_paths.append({"text": token, "path": result})
+                    if isinstance(result, str):  # Error message
+                        sign_language_paths.append(result)
                     else:
-                        alphabet_video_paths = result
-                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
-                        gesture_paths.append({
-                            "text": token,
-                            "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
-                        })
+                        merged_video_path = merge_videos(result, output_filename)
+                        sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
 
         # Label benar (ground truth): semua token dari hasil transkripsi
         y_true = [1 if token in translator else 0 for token in tokens]
 
         # Prediksi sistem: 1 jika sistem berhasil menemukan atau membuat gesture path, 0 jika tidak
         y_pred = []
-        for g in gesture_paths:
-            path = g['path']
-            if "Token" in path or "not found" in path:
+        for g in sign_language_paths:
+            if isinstance(g, str) and ("Token" in g or "not found" in g):
                 y_pred.append(0)
             else:
                 y_pred.append(1)
@@ -292,7 +242,7 @@ def upload_file():
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'gesture_paths': gesture_paths,
+            'gesture_paths': sign_language_paths,
             'evaluation': {
                 'accuracy': f"{accuracy}%",
                 'precision': f"{precision}%",
