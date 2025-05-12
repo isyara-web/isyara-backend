@@ -183,6 +183,16 @@ def upload_file():
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(transcription, translator)
         sign_language_paths = []
+        
+        synonym_map = {
+            entry['synonym'].lower(): True
+            for _, row in df.iterrows()
+            for entry in row.get('synonym', [])
+            if 'synonym' in entry
+        }
+
+        y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
+        y_pred = []
 
         for token in tokens:
             path = None
@@ -208,28 +218,21 @@ def upload_file():
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
                 sign_language_paths.append(path)
+                y_pred.append(1)
             else:
                 output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
                 if os.path.exists(output_filename):
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
+                    y_pred.append(1)
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
                         sign_language_paths.append(result)
+                        y_pred.append(0)
                     else:
                         merged_video_path = merge_videos(result, output_filename)
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
-
-        # Label benar (ground truth): semua token dari hasil transkripsi
-        y_true = [1 if token in translator else 0 for token in tokens]
-
-        # Prediksi sistem: 1 jika sistem berhasil menemukan atau membuat gesture path, 0 jika tidak
-        y_pred = []
-        for g in sign_language_paths:
-            if isinstance(g, str) and ("Token" in g or "not found" in g):
-                y_pred.append(0)
-            else:
-                y_pred.append(1)
+                        y_pred.append(1)
 
         # Hitung metrik evaluasi
         accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
@@ -301,14 +304,41 @@ def upload_link():
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(transcription, translator)
         gesture_paths = []
+        
+        synonym_map = {
+            entry['synonym'].lower(): True
+            for _, row in df.iterrows()
+            for entry in row.get('synonym', [])
+            if 'synonym' in entry
+        }
 
+        y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
+        y_pred = []
+        
         for token in tokens:
+            path = None
             if token in translator:
                 path = translator[token]
+            else:
+                #cek synonym
+                matched_row = None
+                for _, row in df.iterrows():
+                    synonym = row.get('synonym', [])
+                    for synonym_entry in synonym:
+                        if synonym_entry.get("synonym", "").lower() == token:
+                            filtered = df[df['id'] == synonym_entry['id_dataset']]             
+                            if not filtered.empty:
+                                matched_row = filtered.iloc[0]
+                                path = matched_row['path_gesture']
+                                break
+                    if path:
+                        break
+                      
+            if path:       
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
-
                 gesture_paths.append({"text": token, "path": path})
+                y_pred.append(1)
             else:
                 # Periksa apakah file video gesture untuk token sudah ada
                 output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
@@ -321,6 +351,7 @@ def upload_link():
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):
                         gesture_paths.append({"text": token, "path": result})
+                        y_pred.append(0)
                     else:
                         alphabet_video_paths = result
                         merged_video_path = merge_videos(alphabet_video_paths, output_filename)
@@ -328,12 +359,26 @@ def upload_link():
                             "text": token,
                             "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
                         })
+                        y_pred.append(1)
+        
+        accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
+        precision = round(precision_score(y_true, y_pred, zero_division=0) * 100, 2)
+        recall = round(recall_score(y_true, y_pred, zero_division=0) * 100, 2)
+        f1 = round(f1_score(y_true, y_pred, zero_division=0) * 100, 2)
+        cm = confusion_matrix(y_true, y_pred).tolist()
 
         return jsonify({
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'gesture_paths': gesture_paths
+            'gesture_paths': gesture_paths,
+            'evaluation': {
+                'accuracy': f"{accuracy}%",
+                'precision': f"{precision}%",
+                'recall': f"{recall}%",
+                'f1_score': f"{f1}%",
+                'confusion_matrix': cm
+            }
         })
 
     except Exception as e:
@@ -354,6 +399,16 @@ def text_to_gesture():
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(input_text, translator)
         sign_language_paths = []
+        
+        synonym_map = {
+            entry['synonym'].lower(): True
+            for _, row in df.iterrows()
+            for entry in row.get('synonym', [])
+            if 'synonym' in entry
+        }
+
+        y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
+        y_pred = []
 
         for token in tokens:
             path = None
@@ -381,21 +436,39 @@ def text_to_gesture():
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
                 sign_language_paths.append(path)
+                y_pred.append(1)
             else:
                 output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
                 if os.path.exists(output_filename):
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
+                    y_pred.append(1)
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
                         sign_language_paths.append(result)
+                        y_pred.append(0)
                     else:
                         merged_video_path = merge_videos(result, output_filename)
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
+                        y_pred.append(1)
+                        
+        # Evaluasi
+        accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
+        precision = round(precision_score(y_true, y_pred, zero_division=0) * 100, 2)
+        recall = round(recall_score(y_true, y_pred, zero_division=0) * 100, 2)
+        f1 = round(f1_score(y_true, y_pred, zero_division=0) * 100, 2)
+        cm = confusion_matrix(y_true, y_pred).tolist()
 
         return jsonify({
             "tokens": tokens,
-            "paths": sign_language_paths, 
+            "paths": sign_language_paths,
+            "evaluation": {
+                "accuracy": f"{accuracy}%",
+                "precision": f"{precision}%",
+                "recall": f"{recall}%",
+                "f1_score": f"{f1}%",
+                "confusion_matrix": cm
+            }
         }), 200
 
     except Exception as e:
