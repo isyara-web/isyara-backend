@@ -18,6 +18,9 @@ import yt_dlp
 import torch
 from sentence_transformers import SentenceTransformer, util
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from datetime import datetime, date
+import glob
+
 # Load environment variables
 load_dotenv()
 
@@ -220,17 +223,31 @@ def upload_file():
                 sign_language_paths.append(path)
                 y_pred.append(1)
             else:
-                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-                if os.path.exists(output_filename):
-                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
-                    y_pred.append(1)
+                matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
+                if matching_files:
+                    # File gesture sudah ada → gunakan yang ada
+                    latest_file = max(matching_files, key=os.path.getmtime)
+                    filename = os.path.basename(latest_file)
+                    try:
+                        date_str = filename.split('_')[1].replace('.mp4','')
+                        file_date = datetime.strptime(date_str, "%d%m%Y").date()
+                        today = datetime.today().date()
+                    except (IndexError, ValueError):
+                        file_date = today
+                        
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
+                    y_pred.append(1) 
+                    
+                    if file_date != today:
+                        y_true[tokens.index(token)] = 1
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
                         sign_language_paths.append(result)
                         y_pred.append(0)
                     else:
-                        merged_video_path = merge_videos(result, output_filename)
+                        base_name = f"{token}_{datetime.today().strftime('%d%m%Y')}.mp4"
+                        merged_video_path = merge_videos(result, os.path.join(UPLOAD_FOLDER, base_name))
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
                         y_pred.append(1)
 
@@ -303,7 +320,7 @@ def upload_link():
 
         translator = build_translator(df)
         tokens = preprocess_text_for_gesture(transcription, translator)
-        gesture_paths = []
+        sign_language_paths = []
         
         synonym_map = {
             entry['synonym'].lower(): True
@@ -337,28 +354,35 @@ def upload_link():
             if path:       
                 if path.startswith("uploads"):
                     path = f"http://localhost:5000/{path.replace(os.sep, '/')}"
-                gesture_paths.append({"text": token, "path": path})
+                sign_language_paths.append(path)
                 y_pred.append(1)
             else:
                 # Periksa apakah file video gesture untuk token sudah ada
-                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-                if os.path.exists(output_filename):
-                    gesture_paths.append({
-                        "text": token,
-                        "path": f"http://localhost:5000/uploads/{os.path.basename(output_filename)}"
-                    })
+                matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}.mp4"))
+                if matching_files:
+                    latest_file = max(matching_files, key=os.path.getmtime)
+                    filename = os.path.basename(latest_file)
+                    try:
+                        date_str = filename.split('_')[1].replace('.mp4','')
+                        file_date = datetime.strptime(date_str, "%d%m%Y").date()
+                        today = datetime.today().date()
+                    except (IndexError, ValueError):
+                        file_date = today
+                    
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
+                    y_pred.append(1)
+                    
+                    if file_date != today:
+                        y_true[tokens.index(token)] = 1
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):
-                        gesture_paths.append({"text": token, "path": result})
+                        sign_language_paths.append(result)
                         y_pred.append(0)
                     else:
-                        alphabet_video_paths = result
-                        merged_video_path = merge_videos(alphabet_video_paths, output_filename)
-                        gesture_paths.append({
-                            "text": token,
-                            "path": f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}"
-                        })
+                        base_name = f"{token}_{datetime.today().strftime('%d%m%Y')}.mp4"
+                        merged_video_path = merge_videos(result, os.path.join(UPLOAD_FOLDER, base_name))
+                        sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
                         y_pred.append(1)
         
         accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
@@ -371,7 +395,7 @@ def upload_link():
             'status': 'success',
             'message': 'Video berhasil diproses.',
             'transcription': transcription,
-            'gesture_paths': gesture_paths,
+            'gesture_paths': sign_language_paths,
             'evaluation': {
                 'accuracy': f"{accuracy}%",
                 'precision': f"{precision}%",
@@ -438,17 +462,31 @@ def text_to_gesture():
                 sign_language_paths.append(path)
                 y_pred.append(1)
             else:
-                output_filename = os.path.join(UPLOAD_FOLDER, f"{token}.mp4")
-                if os.path.exists(output_filename):
-                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(output_filename)}")
-                    y_pred.append(1)
+                matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
+                if matching_files:
+                    # File gesture sudah ada → gunakan yang ada
+                    latest_file = max(matching_files, key=os.path.getmtime)
+                    filename = os.path.basename(latest_file)
+                    try:
+                        date_str = filename.split('_')[1].replace('.mp4','')
+                        file_date = datetime.strptime(date_str, "%d%m%Y").date()
+                        today = datetime.today().date()
+                    except (IndexError, ValueError):
+                        file_date = today
+                        
+                    sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
+                    y_pred.append(1) 
+                    
+                    if file_date != today:
+                        y_true[tokens.index(token)] = 1
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
                         sign_language_paths.append(result)
                         y_pred.append(0)
                     else:
-                        merged_video_path = merge_videos(result, output_filename)
+                        base_name = f"{token}_{datetime.today().strftime('%d%m%Y')}.mp4"
+                        merged_video_path = merge_videos(result, os.path.join(UPLOAD_FOLDER, base_name))
                         sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
                         y_pred.append(1)
                         
