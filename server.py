@@ -293,8 +293,9 @@ def upload_link():
         else:
             if 'youtube.com' in video_link or 'youtu.be' in video_link:
                 ydl_opts = {
-                    'format': 'best',
+                    'format': 'bestvideo+bestaudio/best',
                     'outtmpl': video_path,
+                    'merge_output_format': 'mp4',
                     'quiet': True,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -375,15 +376,22 @@ def upload_link():
                     if file_date != today:
                         y_true[tokens.index(token)] = 1
                 else:
-                    result = handle_missing_token(token, translator)
-                    if isinstance(result, str):
-                        sign_language_paths.append(result)
-                        y_pred.append(0)
-                    else:
-                        base_name = f"{token}_{datetime.today().strftime('%d%m%Y')}.mp4"
-                        merged_video_path = merge_videos(result, os.path.join(UPLOAD_FOLDER, base_name))
-                        sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
+                    existing_token_videos = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
+                    if existing_token_videos:
+                        # Gunakan video gesture pertama yang ditemukan
+                        latest_file = max(existing_token_videos, key=os.path.getmtime)
+                        sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
                         y_pred.append(1)
+                    else:
+                        result = handle_missing_token(token, translator)
+                        if isinstance(result, str):
+                            sign_language_paths.append(result)
+                            y_pred.append(0)
+                        else:
+                            base_name = f"{token}_{datetime.today().strftime('%d%m%Y')}.mp4"
+                            merged_video_path = merge_videos(result, os.path.join(UPLOAD_FOLDER, base_name))
+                            sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(merged_video_path)}")
+                            y_pred.append(1)
         
         accuracy = round(accuracy_score(y_true, y_pred) * 100, 2)
         precision = round(precision_score(y_true, y_pred, zero_division=0) * 100, 2)
