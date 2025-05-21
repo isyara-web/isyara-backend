@@ -197,7 +197,7 @@ def upload_file():
         y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
         y_pred = []
 
-        for token in tokens:
+        for i, token in enumerate(tokens):
             path = None
             
             if token in translator:
@@ -225,7 +225,6 @@ def upload_file():
             else:
                 matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
                 if matching_files:
-                    # File gesture sudah ada → gunakan yang ada
                     latest_file = max(matching_files, key=os.path.getmtime)
                     filename = os.path.basename(latest_file)
                     try:
@@ -236,10 +235,13 @@ def upload_file():
                         file_date = today
                         
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
-                    y_pred.append(1) 
                     
                     if file_date != today:
-                        y_true[tokens.index(token)] = 1
+                        y_true[i] = 1
+                        y_pred.append(1)
+                    else:
+                        y_true[i] = 1
+                        y_pred.append(0)
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
@@ -333,7 +335,7 @@ def upload_link():
         y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
         y_pred = []
         
-        for token in tokens:
+        for i, token in enumerate(tokens):
             path = None
             if token in translator:
                 path = translator[token]
@@ -359,7 +361,7 @@ def upload_link():
                 y_pred.append(1)
             else:
                 # Periksa apakah file video gesture untuk token sudah ada
-                matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}.mp4"))
+                matching_files = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
                 if matching_files:
                     latest_file = max(matching_files, key=os.path.getmtime)
                     filename = os.path.basename(latest_file)
@@ -371,10 +373,13 @@ def upload_link():
                         file_date = today
                     
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
-                    y_pred.append(1)
                     
                     if file_date != today:
-                        y_true[tokens.index(token)] = 1
+                        y_true[i] = 1
+                        y_pred.append(1)
+                    else:
+                        y_true[i] = 1
+                        y_pred.append(0)
                 else:
                     existing_token_videos = glob.glob(os.path.join(UPLOAD_FOLDER, f"{token}_*.mp4"))
                     if existing_token_videos:
@@ -442,7 +447,7 @@ def text_to_gesture():
         y_true = [1 if token in translator or token in synonym_map else 0 for token in tokens]
         y_pred = []
 
-        for token in tokens:
+        for i, token in enumerate(tokens):
             path = None
 
             # Langsung ada di translator (text)
@@ -483,10 +488,13 @@ def text_to_gesture():
                         file_date = today
                         
                     sign_language_paths.append(f"http://localhost:5000/uploads/{os.path.basename(latest_file)}")
-                    y_pred.append(1) 
                     
                     if file_date != today:
-                        y_true[tokens.index(token)] = 1
+                        y_true[i] = 1
+                        y_pred.append(1)
+                    else:
+                        y_true[i] = 1
+                        y_pred.append(0)
                 else:
                     result = handle_missing_token(token, translator)
                     if isinstance(result, str):  # Error message
